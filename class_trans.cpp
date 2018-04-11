@@ -4,6 +4,8 @@
 #include <iostream>
 #include <fstream>
 #include <stdlib.h>
+#include <dirent.h>
+#include <unistd.h>
 
 //#define DEBUG_SS
 //#define DEBUG_PARAMS
@@ -532,86 +534,6 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
                     update_left_brackets(buf_bak, left_brackets, line);
                     continue;
                 }
-                // --------------
-//                p = strtok(left_b, " ");
-//                //////////
-//#ifdef DEBUG_SS
-//                printf("------------ 1 line[%d], p[%s], buf_bak[%s] ----\n", line, p, buf_bak);
-//#endif
-//                // 吃掉 static virtual inline 关键字
-//                // const截取
-//                while (NULL != p) {
-//                    if (0 == strncmp(p, "static", 6)) {
-//                        p = strtok(NULL, " ");
-//                        continue;
-//                    } else if (0 == strncmp(p, "virtual", 7)) {
-//                        p = strtok(NULL, " ");
-//                        continue;
-//                    } else if (0 == strncmp(p, "inline", 6)) {
-//                        p = strtok(NULL, " ");
-//                        continue;
-//                    } else if (0 == strncmp(p, "const", 5)) {
-//                        strType = p;
-//                        strType += " ";
-//                        p = strtok(NULL, " ");
-//                        continue;
-//                    }
-//                    break;
-//                }
-//                //////////
-//#ifdef DEBUG_SS
-//                printf("------------ 2 line[%d], p[%s], buf_bak[%s] ----\n", line, p, buf_bak);
-//#endif
-//                if (NULL != p) {
-//                    // 暂不处理 析构函数
-//                    if (p[0] == '~') {
-//                        continue;
-//                    }
-//
-//                    strType += p;
-//                    p = strtok(NULL, " ");
-//                    if (NULL != p) {
-//                        // *、&归属
-//                        if ('*' == p[0] || '&' == p[0]) {
-//                            strType += p[0];
-//                            ++p;
-//
-//                            // 处理 int * func()
-//                            if ('\0' == *p) {
-//                                p = strtok(NULL, " ");
-//                                if (NULL == p) {
-//                                    continue;
-//                                }
-//                            }
-//                        }
-//#ifdef DEBUG_SS
-//                        printf("------------ 3 line[%d], p[%s], buf_bak[%s] ----\n", line, p, buf_bak);
-//#endif
-//                        strName = p;
-//                        // ************* 操作符重载 pass
-//                        if (0 == strncmp(p, "operator", 8)) {
-//                            has_operator_overload = true;
-//                            update_left_brackets(buf_bak, left_brackets, line);
-//                            continue;
-//                        }
-//                        // ************* 操作符重载 pass end
-//                        if (mp_func_var_data.end() != mp_func_var_data.find(strName)) {
-//                            // 已存在
-//                            ++ mp_func_var_data[strName].cnt;
-//                            mp_func_var_data[strName].data[mp_func_var_data[strName].cnt - 1].return_type = strType;
-//                        } else {
-//                            // 不存在
-//                            mp_func_var_data[strName].cnt = 1;
-//                            mp_func_var_data[strName].func_var_name = strName;
-//                            mp_func_var_data[strName].data[0].return_type = strType;
-//                            mp_func_var_data[strName].data[0].cnt_param = 0;
-//                            mp_func_var_data[strName].data[0].func_discript = "";
-//                        }
-//                    } else {
-//                        // 暂不处理 构造函数
-//                        continue;
-//                    }
-//                }
                 // --------------------
                 if (strName.empty()) {
                     continue;
@@ -688,5 +610,65 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
 #endif
     }
     
+    in.close();
+    
     return 0;
 }
+
+// 解析指定目录下文件的类
+int Parser_C_Class(const char* dir_path, bool is_save_in_one_file)
+{
+    if (NULL == dir_path || 0 == strcmp(dir_path, "")) {
+        printf("[Parser_C_Class] error: NULL == dir_path || dir_path is empty.\n");
+        exit(-1);
+    }
+    
+    struct dirent *ptr;
+    DIR *dir;
+    char in_file[1024], out_file[1024], rely_file[1024];
+    char cur_path[1024];
+    
+    dir = opendir(dir_path);
+    if (NULL == dir) {
+        printf("[Parser_C_Class] warning: open directory[%s] failed.\n", dir_path);
+        exit(-1);
+    }
+    
+    getcwd(cur_path, 1024);
+    
+    strcpy(rely_file, cur_path);
+    strcat(rely_file, "/result/rely.txt");
+    
+    while ((ptr = readdir(dir)) != NULL) {
+        // 跳过 .开头文件 及 非file类型文件
+        if (ptr->d_name[0] == '.' || DT_REG != ptr->d_type) {
+            continue;
+        }
+        
+        printf("[Parser_C_Class] info: file[%s], type[%d]\n", ptr->d_name, ptr->d_type);
+        // 读取.lua文件加载
+        char* pos = strrchr(ptr->d_name, '.');
+        if (0 == strcmp(pos+1, "h")) {// || 0 == strcmp(pos+1, "cpp")) {
+            strcpy(in_file, dir_path);
+            strcat(in_file, "/");
+            strcat(in_file, ptr->d_name);
+            
+            strcpy(out_file, cur_path);
+            strcat(out_file, "/result/sol_trans_");
+            if (is_save_in_one_file) {
+                strcat(out_file, "result.cpp");
+            } else {
+                strcat(out_file, ptr->d_name);
+            }
+            
+            start_class_trans(in_file, out_file, rely_file);
+        }
+    }
+    
+    closedir(dir);
+    
+    printf("[Parser_C_Class] info: well done! it's the end.\n");
+    
+    return 0;
+}
+
