@@ -106,7 +106,9 @@ void write_to_file(const char* out_file, const char* rely_file)
         exit(-1);
     }
     
-    out << "\ng_pCSolObjectMgr->trans_type_2_lua<" << str_class_name << ">(\"" << str_class_name << "\"" << std::endl;
+    out << "\ng_pCSolObjectMgr->trans_type_2_lua<" << str_class_name << ">(\"" << str_class_name << "\"";
+    // 空的constructs
+    out << ", sol::constructors<()>()" << std::endl;
     
     ///////
     std::map< std::string, ParserSaveData >::iterator iter = mp_func_var_data.begin();
@@ -173,6 +175,9 @@ void write_to_file(const char* out_file, const char* rely_file)
             }
         }
     }
+    
+    // 空的继承
+    out<< NORMAL_LEFT_DISTANCE << ", sol::base_classes, sol::bases<>()" << std::endl;
     
     out << NORMAL_LEFT_DISTANCE << ");" << std::endl;
     
@@ -648,7 +653,7 @@ int Parser_C_Class(const char* dir_path, bool is_save_in_one_file)
         printf("[Parser_C_Class] info: file[%s], type[%d]\n", ptr->d_name, ptr->d_type);
         // 读取.lua文件加载
         char* pos = strrchr(ptr->d_name, '.');
-        if (0 == strcmp(pos+1, "h")) {// || 0 == strcmp(pos+1, "cpp")) {
+        if (0 == strcmp(pos+1, "h")) {
             strcpy(in_file, dir_path);
             strcat(in_file, "/");
             strcat(in_file, ptr->d_name);
