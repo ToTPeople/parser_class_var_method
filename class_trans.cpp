@@ -335,7 +335,6 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
         } else if (NULL == strstr(buf, "(")) {
             // 函数中内容不解析，只解析类中函数和变量
             if (left_brackets == 1) {
-                printf("--------- buf[%s], buf_bak[%s] ======\n", buf, buf_bak);
                 // 变量保存，不解析
                 ParserSaveData varData;
                 varData.cnt = 0;
