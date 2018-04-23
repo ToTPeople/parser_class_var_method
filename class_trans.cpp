@@ -106,9 +106,8 @@ void write_to_file(const char* out_file, const char* rely_file)
         exit(-1);
     }
     
-    out << "\ng_pCSolObjectMgr->trans_type_2_lua<" << str_class_name << ">(\"" << str_class_name << "\"";
-    // 空的constructs
-    out << ", sol::constructors<()>()" << std::endl;
+    str_class_name = trim_string(str_class_name, " ;\t{}");
+    out << "\n" << str_class_name << "\n" << "{\n";
     
     ///////
     std::map< std::string, ParserSaveData >::iterator iter = mp_func_var_data.begin();
@@ -118,68 +117,17 @@ void write_to_file(const char* out_file, const char* rely_file)
         if (cnt <= 0) {
             // 变量
             std::string var = iter->first;
-            out << NORMAL_LEFT_DISTANCE << ", \"" << var << "\", &" << str_class_name << "::" << var << std::endl;
+            out << NORMAL_LEFT_DISTANCE << var << ";" << std::endl << std::endl;
         } else {
             // 函数
             ParserSaveData funcData = iter->second;
-            std::string strP("");
-            std::string strConst("");
-            int pa_cnt;
-            bool is_overload = (cnt > 1) ? true : false;
-            if (is_overload) {
-                out << NORMAL_LEFT_DISTANCE << ", \"" << funcData.func_var_name << "\", sol::overload(" << std::endl;
-            }
-            
             for (int i = 0; i < cnt; ++i ) {
-                strConst = funcData.data[i].func_discript;
-                strP = "";
-                pa_cnt = funcData.data[i].cnt_param;
-                for (int j = 0; j < pa_cnt; ++j) {
-                    if (j > 0) {
-                        strP += ", ";
-                    }
-                    strP += funcData.data[i].params[j];
-                    
-                    // 依赖参数处理 ******************
-                    std::string strParam = funcData.data[i].params[j];
-                    if (mp_inter_type.end() == mp_inter_type.find(strParam)
-                        || mp_outer_type.end() == mp_outer_type.find(strParam)) {
-                        mp_outer_type[strParam] = 1;
-                    }
-                }
-                
-                // 依赖返回值处理 ******************
-                std::string strRT = funcData.data[i].return_type;
-                if (mp_inter_type.end() == mp_inter_type.find(strRT)
-                    || mp_outer_type.end() == mp_outer_type.find(strRT)) {
-                    mp_outer_type[strRT] = 1;
-                }
-
-                // 输出
-                if (is_overload) {
-                    // 重载
-                    out << OVERLOAD_LEFT_DISTANCE;
-                    if (i > 0) {
-                        out << ", ";
-                    }
-                    out << "sol::resolve<" << funcData.data[i].return_type << "(" << strP << ")" << strConst << ">(&" << str_class_name << "::" << funcData.func_var_name << ")" << std::endl;
-                } else {
-                    // 普通
-                    out << NORMAL_LEFT_DISTANCE << ", \"" << funcData.func_var_name << "\", &" << str_class_name << "::" << funcData.func_var_name << std::endl;
-                }
-                // 构造
-                // 父类
-            }
-            if (is_overload) {
-                out << OVERLOAD_LEFT_DISTANCE << ")" << std::endl;
+                out << NORMAL_LEFT_DISTANCE << funcData.data[i].func_discript << ";" << std::endl << std::endl;
             }
         }
     }
     
-    // 空的继承
-    out<< NORMAL_LEFT_DISTANCE << ", sol::base_classes, sol::bases<>()" << std::endl;
-    
-    out << NORMAL_LEFT_DISTANCE << ");" << std::endl;
+    out << "};" << std::endl;
     
     
     // 类型依赖 输出到文件
@@ -276,8 +224,25 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
                 printf("not support: class in class!\n");
                 exit(1);
             }
-            sscanf(buf, "%*s %s ", tmp);
-            str_class_name = tmp;
+            // 提取 类名及继承名称
+            str_class_name = buf;
+            while ( !in.eof() ) {
+                if ( NULL != strstr(buf, "{") ) {
+                    break;
+                }
+                in.getline(buf, g_line_max_char_count - 1);
+                str_class_name += buf;
+                str_class_name = trim_string(str_class_name, "\n");
+                str_class_name = trim_string(str_class_name, "\r");
+                str_class_name = trim_string(str_class_name, "\t");
+                str_class_name = trim_string(str_class_name, " ");
+                
+                int len = str_class_name.length();
+                strncpy(buf, str_class_name.c_str(), len);
+                strncpy(buf_bak, str_class_name.c_str(), len);
+                buf[len] = str_class_name[len] = '\0';
+            }
+            
             is_class_name_parser = true;
             
         } else if (left_brackets <= 0 && !str_class_name.empty()) {
@@ -334,6 +299,7 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
             continue;
         } else if (0 == strncmp(buf, "public:", 7)) {
             attr_type = AttriTypePublic;
+            continue;
         } else if (0 == strncmp(buf, "protected:", 10)
                    || 0 == strncmp(buf, "private:", 8)) {
             attr_type = AttriTypeOther;
@@ -349,6 +315,8 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
         // 解析处理
         if (is_class_name_parser) {
             // 不处理
+        } else if (0 == strcmp(buf, "")) {
+            continue;
         } else if (is_star_tips) {
             // 前面有/* 查找后面 */
             if (NULL != strstr(buf, "*/")) {
@@ -367,39 +335,12 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
         } else if (NULL == strstr(buf, "(")) {
             // 函数中内容不解析，只解析类中函数和变量
             if (left_brackets == 1) {
-                // 变量解析
-                char *p = NULL;
-                p = strtok(buf, " ");
-                // 吃掉 static const inline 关键字
-                while (NULL != p) {
-                    if (0 == strncmp(p, "static", 6)) {
-                        p = strtok(NULL, " ");
-                        continue;
-                    } else if (0 == strncmp(p, "const", 5)) {
-                        p = strtok(NULL, " ");
-                        continue;
-                    } else if (0 == strncmp(p, "inline", 6)) {
-                        p = strtok(NULL, " ");
-                        continue;
-                    }
-                    break;
-                }
-                p = strtok(NULL, " ");
-                if (NULL != p) {
-                    if (0 == strncmp(p, "Vec2", 4)) {
-                        printf("^^^^^^^^^^^^^^ var line[%d], buf_bak[%s] ===========\n\n", line, buf_bak);
-                    } else if (0 == strncmp(p, "const", 5)) {
-                        printf("^^^^^^^^^^^^^^ var line[%d], buf_bak[%s] ===========\n\n", line, buf_bak);
-                    }
-                    // 去除空格、;号
-                    std::string str_var = trim_string(std::string(p));
-                    str_var = trim_string(str_var, ";");
-                    // 保存变量数据
-                    ParserSaveData varData;
-                    varData.cnt = 0;
-                    varData.func_var_name = str_var;
-                    mp_func_var_data[varData.func_var_name] = varData;
-                }
+                printf("--------- buf[%s], buf_bak[%s] ======\n", buf, buf_bak);
+                // 变量保存，不解析
+                ParserSaveData varData;
+                varData.cnt = 0;
+                varData.func_var_name = buf;
+                mp_func_var_data[varData.func_var_name] = varData;
             }
         } else {
             // 函数中内容不解析，只解析类中函数和变量
@@ -425,6 +366,11 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
 //                    printf("========== buf[%s], buf_bak[%s], mul_buf[%s]  =========\n\n", buf, buf_bak, mul_buf.c_str());
                 }
                 
+                // 函数原型
+                std::string str_func(buf);
+                str_func = trim_string(str_func, " ;\t{}");
+                
+                
                 // 单行情况
                 ParserSaveData varData;
                 varData.cnt = 0;
@@ -432,14 +378,6 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
 #ifdef DEBUG_SS
                 printf("************* buf[%s] ******\n", buf);
 #endif
-                // ************* 函数参数有std::function pass
-                if (NULL != strstr(buf, "std::function")) {
-                    has_std_function = true;
-                    update_left_brackets(buf_bak, left_brackets, line);
-                    continue;
-                }
-                // ************* 函数参数有std::function pass
-                
                 // 函数
                 char *left_b = NULL;
                 char *right_b = NULL;
@@ -457,12 +395,13 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
                 char *p = NULL;
                 std::string strType("");
                 std::string strName("");
+                std::string strFuncName(left_b);
                 // return function 函数返回值、函数名处理 --------------------
                 // 从后往前扫，遇到 ' '、'>'、'*'、'&' 等截断
                 std::string str_left(left_b);
                 str_left = trim_string(str_left);
                 int l_len = str_left.length();
-                bool is_find = false;
+                bool is_normal_func = false;
                 for (int i = l_len - 2; i >= 0; --i) {      // 最后一个不判断，，可能是operator *
                     char ch = str_left.at(i);
                     if (' ' == ch || '>' == ch || '*' == ch || '&' == ch) {
@@ -471,7 +410,7 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
                             strName += str_left.at(j);
                         }
                         str_left = str_left.substr(0, i+1);
-                        is_find = true;
+                        is_normal_func = true;
                         break;
                     } else if ('~' == ch) {
                         break;
@@ -485,7 +424,7 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
                     continue;
                 }
                 // type
-                if (is_find) {
+                if (is_normal_func) {
                     strncpy(left_b, str_left.c_str(), str_left.length());
                     left_b[str_left.length()] = '\0';
                     p = strtok(left_b, " ");
@@ -524,6 +463,7 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
                     
                     if (mp_func_var_data.end() != mp_func_var_data.find(strName)) {
                         // 已存在
+                        mp_func_var_data[strName].data[mp_func_var_data[strName].cnt].func_discript = str_func;
                         ++ mp_func_var_data[strName].cnt;
                         mp_func_var_data[strName].data[mp_func_var_data[strName].cnt - 1].return_type = strType;
                     } else {
@@ -532,75 +472,23 @@ int start_class_trans(const char* in_file, const char* out_file, const char* rel
                         mp_func_var_data[strName].func_var_name = strName;
                         mp_func_var_data[strName].data[0].return_type = strType;
                         mp_func_var_data[strName].data[0].cnt_param = 0;
-                        mp_func_var_data[strName].data[0].func_discript = "";
+                        mp_func_var_data[strName].data[0].func_discript = str_func;
                     }
                 } else {
-                    printf("===== maybe error: line[%d], buf_bak[%s] -----\n", line, buf_bak);
-                    update_left_brackets(buf_bak, left_brackets, line);
-                    continue;
-                }
-                // --------------------
-                if (strName.empty()) {
-                    continue;
-                }
-                int idx = mp_func_var_data[strName].cnt - 1;
-                // 函数参数处理 --------------------
-                if (NULL != param) {
-#ifdef DEBUG_PARAMS
-                    printf("----------- buf_bak[%s] --------\n", buf_bak);
-#endif
-                    // 以,分隔出参数；再从后往前分离出类型
-                    p = strtok(param, ",");
-                    while (NULL != p) {
-#ifdef DEBUG_PARAMS
-                        printf("----------- p[%s] --------\n", p);
-#endif
-                        // 从后往前分离出类型，  空格 * & ... >
-                        int len = strlen(p);
-                        std::string strParamType("");
-                        for (int i = len-1; i >= 0; --i) {
-                            char ch = p[i];
-                            if ('*' == ch || '.' == ch || '>' == ch) {
-                                for (int j = 0; j <= i && p[j] != '='; ++j) {
-                                    strParamType += p[j];
-                                }
-                                break;
-                            } else if (' ' == ch) {
-                                for (int j = 0; j < i && p[j] != '='; ++j) {
-                                    strParamType += p[j];
-                                }
-                                break;
-                            }
-                        }
-                        // 更新保存数据
-                        strParamType = trim_string(strParamType);
-                        int pa_idx = mp_func_var_data[strName].data[idx].cnt_param;
-                        mp_func_var_data[strName].data[idx].params[pa_idx] = strParamType;
-                        ++ mp_func_var_data[strName].data[idx].cnt_param;
-                        
-#ifdef DEBUG_PARAMS
-                        printf("************** pa_idx[%d], strParamType[%s] --------\n", pa_idx, strParamType.c_str());
-#endif
-                        
-                        p = strtok(NULL, ",");
-                    }
-                }
-                // 后面修示const解析 --------------------
-                if (NULL != right_b) {
-                    std::string tmp_buf = trim_string(std::string(right_b));
-                    tmp_buf = trim_string(tmp_buf, ";");
-                    std::string func_dis("");
-                    int ll = tmp_buf.length();
-                    for (int i = 0; i < ll; ++i) {
-                        char ch = tmp_buf.at(i);
-                        if (' ' == ch || '{' == ch || ';' == ch) {
-                            break;
-                        }
-                        
-                        func_dis += ch;
+                    // 构造、析构函数
+                    if (mp_func_var_data.end() != mp_func_var_data.find(strFuncName)) {
+                        // 已存在
+                        mp_func_var_data[strFuncName].data[mp_func_var_data[strFuncName].cnt].func_discript = str_func;
+                        ++ mp_func_var_data[strFuncName].cnt;
+                    } else {
+                        // 不存在
+                        mp_func_var_data[strFuncName].cnt = 1;
+                        mp_func_var_data[strFuncName].func_var_name = strFuncName;
+                        mp_func_var_data[strFuncName].data[0].func_discript = str_func;
                     }
                     
-                    mp_func_var_data[strName].data[idx].func_discript = func_dis;
+                    update_left_brackets(buf_bak, left_brackets, line);
+                    continue;
                 }
             }
         }
@@ -651,9 +539,9 @@ int Parser_C_Class(const char* dir_path, bool is_save_in_one_file)
         }
         
         printf("[Parser_C_Class] info: file[%s], type[%d]\n", ptr->d_name, ptr->d_type);
-        // 读取.lua文件加载
+        // 读取.h 或 .hpp 文件加载
         char* pos = strrchr(ptr->d_name, '.');
-        if (0 == strcmp(pos+1, "h")) {
+        if (0 == strcmp(pos+1, "h") || 0 == strcmp(pos+1, "hpp")) {
             strcpy(in_file, dir_path);
             strcat(in_file, "/");
             strcat(in_file, ptr->d_name);
