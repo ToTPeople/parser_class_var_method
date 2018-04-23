@@ -653,7 +653,7 @@ int Parser_C_Class(const char* dir_path, bool is_save_in_one_file)
         printf("[Parser_C_Class] info: file[%s], type[%d]\n", ptr->d_name, ptr->d_type);
         // 读取.lua文件加载
         char* pos = strrchr(ptr->d_name, '.');
-        if (0 == strcmp(pos+1, "h")) {
+        if (0 == strcmp(pos+1, "h") || 0 == strcmp(pos+1, "hpp")) {
             strcpy(in_file, dir_path);
             strcat(in_file, "/");
             strcat(in_file, ptr->d_name);
